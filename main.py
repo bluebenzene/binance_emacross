@@ -1,14 +1,12 @@
 import os
 import time
 import logging
-import requests
 import pandas as pd
 import pandas_ta as ta
-from binance.client import Client
-from requests.exceptions import ConnectionError
+from binance import AsyncClient
 from dotenv import load_dotenv
 from retrying import retry
-
+import asyncio
 # Load the environment variables from the .env file
 load_dotenv()
 
@@ -38,7 +36,7 @@ BUY = 'BUY'
 SELL = 'SELL'
 MARKET = 'MARKET'
 
-client = Client(api_key, api_secret)
+client = AsyncClient(api_key, api_secret)
 
 class TradingStrategy:
     def __init__(self, client, fast_ema, slow_ema):
@@ -47,13 +45,9 @@ class TradingStrategy:
         self.slow_ema = slow_ema
 
     @retry(stop_max_attempt_number=3, wait_fixed=2000)
-    def get_historical_data(self, symbol, interval, lookback):
+    async def get_historical_data(self, symbol, interval, lookback):
         """Fetch historical data from Binance."""
-        try:
-            frame = pd.DataFrame(self.client.get_historical_klines(symbol, interval, lookback + ' day ago UTC'))
-        except ConnectionError as e:
-            logger.error(f"Failed to fetch historical data: {e}")
-            return pd.DataFrame()
+        frame = pd.DataFrame(await self.client.get_historical_klines(symbol, interval, lookback + ' day ago UTC'))
         if frame.empty:
             logger.error("No data returned from Binance API")
             return pd.DataFrame()
@@ -76,32 +70,29 @@ class TradingStrategy:
         return data['Buy_Signal'].iloc[-1], data['Sell_Signal'].iloc[-1]
 
     @retry(stop_max_attempt_number=3, wait_fixed=2000)
-    def place_order(self, side, symbol, quantity):
+    async def place_order(self, side, symbol, quantity):
         """Place an order on Binance."""
-        try:
-            order = self.client.futures_create_order(symbol=symbol, side=side, type=MARKET, quantity=quantity)
-        except Exception as e:
-            logger.error(f"Failed to place order: {e}")
-            return None
+        order = await self.client.futures_create_order(symbol=symbol, side=side, type=MARKET, quantity=quantity)
         return order
 
-def main():
+async def main():
     strategy = TradingStrategy(client, FAST_EMA, SLOW_EMA)
     while True:
         start_time = time.time()
-        data = strategy.get_historical_data(SYMBOL, TIME_FRAME, '1')
+        data = await strategy.get_historical_data(SYMBOL, TIME_FRAME, '1')
         buy_signal, sell_signal = strategy.implement_strategy(data)
         if buy_signal:
             logger.info('Buy signal detected')
-            order = strategy.place_order(BUY, SYMBOL, QUANTITY)
+            order = await strategy.place_order(BUY, SYMBOL, QUANTITY)
             if order:
                 logger.info(f"Buy order placed: {order}")
         elif sell_signal:
             logger.info('Sell signal detected')
-            order = strategy.place_order(SELL, SYMBOL, QUANTITY)
+            order = await strategy.place_order(SELL, SYMBOL, QUANTITY)
             if order:
                 logger.info(f"Sell order placed: {order}")
-        time.sleep(max(0, SLEEP_INTERVAL - (time.time() - start_time)))
+        await asyncio.sleep(max(0, SLEEP_INTERVAL - (time.time() - start_time)))
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())
