@@ -1,0 +1,6 @@
+python-binance
+pandas_ta
+python-dotenv
+pandas 
+requests
+```
