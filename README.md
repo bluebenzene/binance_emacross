@@ -22,7 +22,7 @@ To run the trading bot, you need the following:
 
 1. Clone the repository: `git clone https://github.com/your-username/trading-bot.git`
 2. Install the required packages: `pip install -r requirements.txt`
-3. Set up your Binance API credentials in the `config.py` file.
+3. Set up your Binance API credentials in the `.env` file. , edit the `.env.test`
 4. Run the bot: `python bot.py`
 
 ### Disclaimer
