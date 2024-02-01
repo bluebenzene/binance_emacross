@@ -7,12 +7,13 @@ import pandas_ta as ta
 from binance.client import Client
 from requests.exceptions import ConnectionError
 from dotenv import load_dotenv
+from retrying import retry
 
 # Load the environment variables from the .env file
 load_dotenv()
 
 # Set up logging
-logging.basicConfig(filename='trade.log', filemode='w', level=logging.INFO)
+logging.basicConfig(filename='trade.log', filemode='w', level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
 # Define your Binance API credentials
