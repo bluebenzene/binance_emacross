@@ -3,4 +3,5 @@ pandas_ta
 python-dotenv
 pandas 
 requests
+retrying
 ```
