@@ -7,12 +7,15 @@ from binance import AsyncClient
 from dotenv import load_dotenv
 from retrying import retry
 import asyncio
+from trading_strategy import TradingStrategy
+from paper_trading import PaperTrading
+
 # Load the environment variables from the .env file
 load_dotenv()
 
 # Set up logging
 logging.basicConfig(filename='trade.log', filemode='w', level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger()
+logger = logging.getLogger('main')
 
 # Define your Binance API credentials
 api_key = os.getenv('BINANCE_API_KEY')
@@ -38,59 +41,36 @@ MARKET = 'MARKET'
 
 client = AsyncClient(api_key, api_secret)
 
-class TradingStrategy:
-    def __init__(self, client, fast_ema, slow_ema):
-        self.client = client
-        self.fast_ema = fast_ema
-        self.slow_ema = slow_ema
-
-    @retry(stop_max_attempt_number=3, wait_fixed=2000)
-    async def get_historical_data(self, symbol, interval, lookback):
-        """Fetch historical data from Binance."""
-        frame = pd.DataFrame(await self.client.get_historical_klines(symbol, interval, lookback + ' day ago UTC'))
-        if frame.empty:
-            logger.error("No data returned from Binance API")
-            return pd.DataFrame()
-        frame = frame.iloc[:, :6]
-        frame.columns = ['Time', 'Open', 'High', 'Low', 'Close', 'Volume']
-        frame = frame.set_index('Time')
-        frame.index = pd.to_datetime(frame.index, unit='ms')
-        frame = frame.astype(float)
-        return frame
-
-    def implement_strategy(self, data):
-        """Implement the EMA crossover strategy."""
-        if data.empty:
-            logger.error("Data frame is empty")
-            return False, False
-        data.ta.ema(close='Close', length=self.fast_ema, append=True)
-        data.ta.ema(close='Close', length=self.slow_ema, append=True)
-        data['Buy_Signal'] = (data['EMA_20'] > data['EMA_200'])
-        data['Sell_Signal'] = (data['EMA_20'] < data['EMA_200'])
-        return data['Buy_Signal'].iloc[-1], data['Sell_Signal'].iloc[-1]
-
-    @retry(stop_max_attempt_number=3, wait_fixed=2000)
-    async def place_order(self, side, symbol, quantity):
-        """Place an order on Binance."""
-        order = await self.client.futures_create_order(symbol=symbol, side=side, type=MARKET, quantity=quantity)
-        return order
+# Initialize paper trading with $1000
+paper_trading = PaperTrading(1000)
 
 async def main():
-    strategy = TradingStrategy(client, FAST_EMA, SLOW_EMA)
+    strategy = TradingStrategy(client, FAST_EMA, SLOW_EMA,logger)
     while True:
         start_time = time.time()
-        data = await strategy.get_historical_data(SYMBOL, TIME_FRAME, '1')
+        try:
+            data = await strategy.get_historical_data(SYMBOL, TIME_FRAME, '1')
+        except Exception as e:
+            logger.error(f"Failed to fetch historical data: {e}")
+            continue
         buy_signal, sell_signal = strategy.implement_strategy(data)
+        current_price = data['Close'].iloc[-1]
         if buy_signal:
             logger.info('Buy signal detected')
             order = await strategy.place_order(BUY, SYMBOL, QUANTITY)
-            if order:
+            paper_order = paper_trading.place_order(BUY, SYMBOL, QUANTITY, current_price)
+            if order and paper_order:
                 logger.info(f"Buy order placed: {order}")
+                logger.info(f"Paper trade: Buy order placed")
         elif sell_signal:
             logger.info('Sell signal detected')
             order = await strategy.place_order(SELL, SYMBOL, QUANTITY)
-            if order:
+            paper_order = paper_trading.place_order(SELL, SYMBOL, QUANTITY, current_price)
+            if order and paper_order:
                 logger.info(f"Sell order placed: {order}")
+                logger.info(f"Paper trade: Sell order placed")
+        profit = paper_trading.calculate_profit(current_price)
+        logger.info(f"Paper trade: Current profit: {profit}")
         await asyncio.sleep(max(0, SLEEP_INTERVAL - (time.time() - start_time)))
 
 if __name__ == "__main__":
